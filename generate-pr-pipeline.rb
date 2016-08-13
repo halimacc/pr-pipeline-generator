@@ -85,7 +85,9 @@ def replace_input_resource(pipeline, resource_name)
   return pr_resource_name
 end
 
-def generate_notification_step(email_resource_name, subject, body, pr_resource_name, pr_resource_path, pr_status)
+def generate_notification_step(email_resource_name, email_body, pr_resource_name, pr_resource_path, pr_status)
+  email_subject = "Concourse notification on bosh-azure-cpi-release"
+  email_output = 'email-content'
   step = {
     'do' => [{
       'task' => 'generate-email-content',
@@ -94,14 +96,19 @@ def generate_notification_step(email_resource_name, subject, body, pr_resource_n
         'image_resource' => {
           'type' => 'docker-image',
           'source' => {
-            'repository' => 'ubuntu'
+            'repository' => 'jtarchie/pr'
           }
         },
         'inputs' => [{'name' => pr_resource_path}],
-        'outputs' => [{'name' => 'email-content'}],
+        'outputs' => [{'name' => email_output}],
         'run' => {
           'path' => 'sh',
-          'args' => ['-c', "echo '#{subject}' > email-content/subject && echo '#{body}' > email-content/body"]
+          'args' => [
+            '-c',
+            "echo \"#{email_subject}\" > #{email_output}/subject "\
+            "&& cd #{pr_resource_path} && export PR_ID=`git config --get pullrequest.id` "\
+            "&& cd .. && echo \"Pull request #${PR_ID} : #{email_body}. View detail at http://13.94.41.160:8080/pipelines/pr-pipeline.\" > #{email_output}/body"
+          ]
         }
       }
     }, {
@@ -165,14 +172,14 @@ def add_notification_resource_and_steps(pipeline, key_resource_name, key_resourc
 
   # add start notification for entry job
   entry_job = pipeline['jobs'].select {|job| job['name'] == entry_job_name}[0]
-  build_start_step = generate_notification_step(email_resource_name, 'A new build has started', 'nobody', key_resource_name, key_resource_path, 'pending')
+  build_start_step = generate_notification_step(email_resource_name, 'Build start', key_resource_name, key_resource_path, 'pending')
   entry_job['plan'].insert(1, build_start_step)
 
   # add on failure notification for entry job and test jobs
-  wrap_job_on_failure(entry_job, generate_notification_step(email_resource_name, "Build failed at #{entry_job_name}", 'nobody', key_resource_name, key_resource_path, 'failure'))
+  wrap_job_on_failure(entry_job, generate_notification_step(email_resource_name, "Build failed at job #{entry_job_name}", key_resource_name, key_resource_path, 'failure'))
   test_job_names.each{|job_name|
     test_job = pipeline['jobs'].select {|job| job['name'] == job_name}[0]
-    wrap_job_on_failure(test_job, generate_notification_step(email_resource_name, "Build failed at #{job_name}", 'nobody', key_resource_name, key_resource_path, 'failure'))
+    wrap_job_on_failure(test_job, generate_notification_step(email_resource_name, "Build failed at job #{job_name}", key_resource_name, key_resource_path, 'failure'))
   }
 
   # add a cleanup job for notify build result
@@ -184,7 +191,7 @@ def add_notification_resource_and_steps(pipeline, key_resource_name, key_resourc
         'trigger' => true,
         'passed' => test_job_names
       },
-      generate_notification_step(email_resource_name, 'Build passed', 'nobody', key_resource_name, key_resource_path, 'success')
+      generate_notification_step(email_resource_name, 'Build succeed', key_resource_name, key_resource_path, 'success')
     ]
   }
 
@@ -266,9 +273,9 @@ test_job_names = ['bats-ubuntu', 'lifecycle']
 # main
 pipeline = load_pipeline(pipeline_file)
 
-replaced_resource_name = replace_input_resource(pipeline, input_resource_name)
+pr_resource_name = replace_input_resource(pipeline, input_resource_name)
 
-cleanup_job_name = add_notification_resource_and_steps(pipeline, replaced_resource_name, input_resource_path, entry_job_name, test_job_names)
+cleanup_job_name = add_notification_resource_and_steps(pipeline, pr_resource_name, input_resource_path, entry_job_name, test_job_names)
 
 add_pipeline_lock(pipeline, entry_job_name, cleanup_job_name)
 
