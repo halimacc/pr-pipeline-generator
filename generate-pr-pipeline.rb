@@ -1,15 +1,30 @@
 require 'yaml'
 
 # Params of new resources
+
+# input pipeline file path &
 pipeline_file = 'pipeline.yml.example'
+
+# output pipeline file path
 pr_pipeline_file = 'pr-pipeline.yml.example'
 
+# resource name of bosh-azure-cpi-release to replace
 $input_resource_name = 'bosh-cpi-release-in'
+
+# resource name of pull request of bosh-azure-cpi-release
 $pr_resource_name = 'bosh-cpi-pr'
+
+# the repository of your bosh-azure-cpi-release
 $pr_repo = 'halimacc/bosh-azure-cpi-release'
-$email_from = 'bot@bosh.azure.cpi.com'
-$email_to_list = ['t-chhe@microsoft.com']
+
+# concourse uri
 $concourse_uri = 'http://13.94.41.160:8080'
+
+# email notification list
+$email_to_list = ['t-chhe@microsoft.com']
+$email_from = 'bot@bosh.azure.cpi.com'
+
+
 
 #==========================================================
 
