@@ -1,5 +1,24 @@
 require 'yaml'
 
+# Params of new resources
+pipeline_file = 'pipeline.yml.example'
+pr_pipeline_file = 'pr-pipeline.yml.example'
+
+$input_resource_name = 'bosh-cpi-release-in'
+$pr_resource_name = 'bosh-cpi-pr'
+$pr_repo = 'halimacc/bosh-azure-cpi-release'
+$email_from = 'bot@bosh.azure.cpi.com'
+$email_to_list = ['t-chhe@microsoft.com']
+$concourse_uri = 'http://13.94.41.160:8080'
+
+#==========================================================
+
+$input_resource_path = 'bosh-cpi-release'
+$entry_job_name = 'build-candidate'
+$test_job_names = ['bats-ubuntu', 'lifecycle']
+$cleanup_job_name = 'cleanup_on_success'
+$email_resource_name = 'email-notification'
+
 def load_pipeline(pipeline_file)
   # load the pipeline as a Hash 
   file = File.open(pipeline_file, 'r')
@@ -41,7 +60,7 @@ def extract_steps(steps)
   return result
 end
 
-def replace_input_resource(pipeline, resource_name)
+def replace_input_resource(pipeline)
   # add pr resource type and resource
   pr_resource_type = {
     'name' => 'pull-request',
@@ -51,13 +70,12 @@ def replace_input_resource(pipeline, resource_name)
     }
   }
 
-  pr_resource_name = 'bosh-cpi-pr'
   pr_resource = {
-    'name' => pr_resource_name,
+    'name' => $pr_resource_name,
     'type' => 'pull-request',
     'source' => {
-      'repo' => 'halimacc/bosh-azure-cpi-release',
-      'access_token' => '$release_pr_access_token$',
+      'repo' => $pr_repo,
+      'access_token' => '$github_access_token$',
       'private_key' => '$github_deployment_key__bosh-azure-cpi-release$',
       'every' => true
     }
@@ -74,18 +92,19 @@ def replace_input_resource(pipeline, resource_name)
     steps = extract_steps(job['plan'])
     steps.each {|step|
       if step.key?('get')
-        if step['get'] == resource_name || step.key?('resource') && step['resource'] == resource_name
-          step['resource'] = pr_resource_name
+        if step['get'] == $input_resource_name || step.key?('resource') && step['resource'] == $input_resource_name
+          step['resource'] = $pr_resource_name
           step['version'] = 'every'
+          if job['name'] == $entry_job_name
+            step['trigger'] = true
+          end
         end
       end
     }
   }
-
-  return pr_resource_name
 end
 
-def generate_notification_step(email_resource_name, email_body, pr_resource_name, pr_resource_path, pr_status)
+def generate_notification_step(email_body, pr_status)
   email_subject = "Concourse notification on bosh-azure-cpi-release"
   email_output = 'email-content'
   step = {
@@ -99,28 +118,28 @@ def generate_notification_step(email_resource_name, email_body, pr_resource_name
             'repository' => 'jtarchie/pr'
           }
         },
-        'inputs' => [{'name' => pr_resource_path}],
+        'inputs' => [{'name' => $input_resource_path}],
         'outputs' => [{'name' => email_output}],
         'run' => {
           'path' => 'sh',
           'args' => [
             '-c',
             "echo \"#{email_subject}\" > #{email_output}/subject "\
-            "&& cd #{pr_resource_path} && export PR_ID=`git config --get pullrequest.id` "\
-            "&& cd .. && echo \"Pull request #${PR_ID} : #{email_body}. View detail at http://13.94.41.160:8080/pipelines/pr-pipeline.\" > #{email_output}/body"
+            "&& cd #{$input_resource_path} && export PR_ID=`git config --get pullrequest.id` "\
+            "&& cd .. && echo \"Pull request #${PR_ID} : #{email_body}. View detail at #{$concourse_uri}/pipelines/pr-pipeline.\" > #{email_output}/body"
           ]
         }
       }
     }, {
-      'put' => email_resource_name,
+      'put' => $email_resource_name,
       'params' => {
         'subject' => 'email-content/subject',
         'body' => 'email-content/body'
       }
     }, {
-      'put' => pr_resource_name,
+      'put' => $pr_resource_name,
       'params' => {
-        'path' => pr_resource_path,
+        'path' => $input_resource_path,
         'status' => pr_status
       }
     }]
@@ -138,7 +157,7 @@ def wrap_job_on_failure(job, on_failure_step)
   job['plan'] = plan[0 .. 1]
 end
 
-def add_notification_resource_and_steps(pipeline, key_resource_name, key_resource_path, entry_job_name, test_job_names)
+def add_notification_resource_and_steps(pipeline)
   # add email resource
   email_resource_type = {
     'name' => 'email',
@@ -148,9 +167,8 @@ def add_notification_resource_and_steps(pipeline, key_resource_name, key_resourc
     }
   }
 
-  email_resource_name = 'email-notification'
   email_resource = {
-    'name' => email_resource_name,
+    'name' => $email_resource_name,
     'type' => 'email',
     'source' => {
       'smtp' => {
@@ -159,8 +177,8 @@ def add_notification_resource_and_steps(pipeline, key_resource_name, key_resourc
         'username' => '$email_smtp_username$',
         'password' => '$email_smtp_password$'
       },
-      'from' => '$email_from$',
-      'to' => ['t-chhe@microsoft.com']
+      'from' => $email_from,
+      'to' => $email_to_list
     }
   }
 
@@ -171,37 +189,34 @@ def add_notification_resource_and_steps(pipeline, key_resource_name, key_resourc
   pipeline['resources'].push(email_resource)
 
   # add start notification for entry job
-  entry_job = pipeline['jobs'].select {|job| job['name'] == entry_job_name}[0]
-  build_start_step = generate_notification_step(email_resource_name, 'Build start', key_resource_name, key_resource_path, 'pending')
+  entry_job = pipeline['jobs'].select {|job| job['name'] == $entry_job_name}[0]
+  build_start_step = generate_notification_step('Build started', 'pending')
   entry_job['plan'].insert(1, build_start_step)
 
   # add on failure notification for entry job and test jobs
-  wrap_job_on_failure(entry_job, generate_notification_step(email_resource_name, "Build failed at job #{entry_job_name}", key_resource_name, key_resource_path, 'failure'))
-  test_job_names.each{|job_name|
+  wrap_job_on_failure(entry_job, generate_notification_step("Build failed at job #{$entry_job_name}", 'failure'))
+  $test_job_names.each{|job_name|
     test_job = pipeline['jobs'].select {|job| job['name'] == job_name}[0]
-    wrap_job_on_failure(test_job, generate_notification_step(email_resource_name, "Build failed at job #{job_name}", key_resource_name, key_resource_path, 'failure'))
+    wrap_job_on_failure(test_job, generate_notification_step("Build failed at job #{job_name}", 'failure'))
   }
 
   # add a cleanup job for notify build result
-  cleanup_job_name = 'cleanup-on-success'
   cleanup_job = {
-    'name' => 'cleanup-on-success',
+    'name' => $cleanup_job_name,
     'plan' => [{
-        'get' => key_resource_name,
+        'get' => $pr_resource_name,
         'trigger' => true,
-        'passed' => test_job_names
+        'passed' => $test_job_names
       },
-      generate_notification_step(email_resource_name, 'Build succeed', key_resource_name, key_resource_path, 'success')
+      generate_notification_step('Build succeed', 'success')
     ]
   }
 
-  pipeline['groups'][0]['jobs'].push(cleanup_job_name)
+  pipeline['groups'][0]['jobs'].push($cleanup_job_name)
   pipeline['jobs'].push(cleanup_job)
-
-  return cleanup_job_name
 end
 
-def add_pipeline_lock(pipeline, entry_job_name, exit_job_name)
+def add_pipeline_lock(pipeline)
   # add lock resource
   lock_resource_name = 'pipeline-lock'
   lock_resource = {
@@ -218,7 +233,7 @@ def add_pipeline_lock(pipeline, entry_job_name, exit_job_name)
   pipeline['resources'].push(lock_resource)
 
   # insert lock step to the start of pipeline entry job
-  entry_job = pipeline['jobs'].select {|job| job['name'] == entry_job_name}[0]
+  entry_job = pipeline['jobs'].select {|job| job['name'] == $entry_job_name}[0]
   entry_lock_step = {
     'put' => lock_resource_name,
     'params' => {
@@ -228,7 +243,7 @@ def add_pipeline_lock(pipeline, entry_job_name, exit_job_name)
   entry_job['plan'].insert(0, entry_lock_step)
 
   # insert lock step to the end of pipeline exit job
-  exit_job = pipeline['jobs'].select {|job| job['name'] == exit_job_name}[0]
+  exit_job = pipeline['jobs'].select {|job| job['name'] == $cleanup_job_name}[0]
   exit_lock_step = {
     'do' => [{
       'get' => lock_resource_name
@@ -263,21 +278,16 @@ end
 
 #======================================================================================
 # parameters
-pipeline_file = 'pipeline.yml'
-pr_pipeline_file = 'pr-pipeline.yml'
-input_resource_name = 'bosh-cpi-release-in'
-input_resource_path = 'bosh-cpi-release'
-entry_job_name = 'build-candidate'
-test_job_names = ['bats-ubuntu', 'lifecycle']
+
 
 # main
 pipeline = load_pipeline(pipeline_file)
 
-pr_resource_name = replace_input_resource(pipeline, input_resource_name)
+replace_input_resource(pipeline)
 
-cleanup_job_name = add_notification_resource_and_steps(pipeline, pr_resource_name, input_resource_path, entry_job_name, test_job_names)
+add_notification_resource_and_steps(pipeline)
 
-add_pipeline_lock(pipeline, entry_job_name, cleanup_job_name)
+add_pipeline_lock(pipeline)
 
 # write to file
 File.open(pr_pipeline_file, 'w') { |f| f.write pipeline.to_yaml(line_width: -1).gsub('"$', '{{').gsub('$"', '}}') }

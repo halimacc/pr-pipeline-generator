@@ -8,7 +8,7 @@ groups:
   - lifecycle
   - bats-ubuntu
   - promote-candidate
-  - cleanup-on-success
+  - cleanup_on_success
   - release-pipeline-lock
 jobs:
 - name: recreate-infrastructure-primary
@@ -62,7 +62,7 @@ jobs:
     params:
       acquire: true
   - aggregate:
-    - trigger: false
+    - trigger: true
       get: bosh-cpi-release
       resource: bosh-cpi-pr
       version: every
@@ -78,7 +78,7 @@ jobs:
           image_resource:
             type: docker-image
             source:
-              repository: ubuntu
+              repository: jtarchie/pr
           inputs:
           - name: bosh-cpi-release
           outputs:
@@ -87,7 +87,7 @@ jobs:
             path: sh
             args:
             - "-c"
-            - echo 'A new build has started' > email-content/subject && echo 'nobody' > email-content/body
+            - 'echo "Concourse notification on bosh-azure-cpi-release" > email-content/subject && cd bosh-cpi-release && export PR_ID=`git config --get pullrequest.id` && cd .. && echo "Pull request #${PR_ID} : Build started. View detail at http://13.94.41.160:8080/pipelines/pr-pipeline." > email-content/body'
       - put: email-notification
         params:
           subject: email-content/subject
@@ -112,7 +112,7 @@ jobs:
           image_resource:
             type: docker-image
             source:
-              repository: ubuntu
+              repository: jtarchie/pr
           inputs:
           - name: bosh-cpi-release
           outputs:
@@ -121,7 +121,7 @@ jobs:
             path: sh
             args:
             - "-c"
-            - echo 'Build failed at build-candidate' > email-content/subject && echo 'nobody' > email-content/body
+            - 'echo "Concourse notification on bosh-azure-cpi-release" > email-content/subject && cd bosh-cpi-release && export PR_ID=`git config --get pullrequest.id` && cd .. && echo "Pull request #${PR_ID} : Build failed at job build-candidate. View detail at http://13.94.41.160:8080/pipelines/pr-pipeline." > email-content/body'
       - put: email-notification
         params:
           subject: email-content/subject
@@ -170,7 +170,7 @@ jobs:
           image_resource:
             type: docker-image
             source:
-              repository: ubuntu
+              repository: jtarchie/pr
           inputs:
           - name: bosh-cpi-release
           outputs:
@@ -179,7 +179,7 @@ jobs:
             path: sh
             args:
             - "-c"
-            - echo 'Build failed at lifecycle' > email-content/subject && echo 'nobody' > email-content/body
+            - 'echo "Concourse notification on bosh-azure-cpi-release" > email-content/subject && cd bosh-cpi-release && export PR_ID=`git config --get pullrequest.id` && cd .. && echo "Pull request #${PR_ID} : Build failed at job lifecycle. View detail at http://13.94.41.160:8080/pipelines/pr-pipeline." > email-content/body'
       - put: email-notification
         params:
           subject: email-content/subject
@@ -265,7 +265,7 @@ jobs:
           image_resource:
             type: docker-image
             source:
-              repository: ubuntu
+              repository: jtarchie/pr
           inputs:
           - name: bosh-cpi-release
           outputs:
@@ -274,7 +274,7 @@ jobs:
             path: sh
             args:
             - "-c"
-            - echo 'Build failed at bats-ubuntu' > email-content/subject && echo 'nobody' > email-content/body
+            - 'echo "Concourse notification on bosh-azure-cpi-release" > email-content/subject && cd bosh-cpi-release && export PR_ID=`git config --get pullrequest.id` && cd .. && echo "Pull request #${PR_ID} : Build failed at job bats-ubuntu. View detail at http://13.94.41.160:8080/pipelines/pr-pipeline." > email-content/body'
       - put: email-notification
         params:
           subject: email-content/subject
@@ -313,7 +313,7 @@ jobs:
   - put: release-version-semver
     params:
       file: release-version-semver/number
-- name: cleanup-on-success
+- name: cleanup_on_success
   plan:
   - get: bosh-cpi-pr
     trigger: true
@@ -327,7 +327,7 @@ jobs:
         image_resource:
           type: docker-image
           source:
-            repository: ubuntu
+            repository: jtarchie/pr
         inputs:
         - name: bosh-cpi-release
         outputs:
@@ -336,7 +336,7 @@ jobs:
           path: sh
           args:
           - "-c"
-          - echo 'Build passed' > email-content/subject && echo 'nobody' > email-content/body
+          - 'echo "Concourse notification on bosh-azure-cpi-release" > email-content/subject && cd bosh-cpi-release && export PR_ID=`git config --get pullrequest.id` && cd .. && echo "Pull request #${PR_ID} : Build succeed. View detail at http://13.94.41.160:8080/pipelines/pr-pipeline." > email-content/body'
     - put: email-notification
       params:
         subject: email-content/subject
@@ -417,7 +417,7 @@ resources:
   type: pull-request
   source:
     repo: halimacc/bosh-azure-cpi-release
-    access_token: {{release_pr_access_token}}
+    access_token: {{github_access_token}}
     private_key: {{github_deployment_key__bosh-azure-cpi-release}}
     every: true
 - name: email-notification
@@ -428,7 +428,7 @@ resources:
       port: {{email_smtp_port}}
       username: {{email_smtp_username}}
       password: {{email_smtp_password}}
-    from: {{email_from}}
+    from: bot@bosh.azure.cpi.com
     to:
     - t-chhe@microsoft.com
 - name: pipeline-lock
