@@ -21,7 +21,7 @@ $pr_repo = 'halimacc/bosh-azure-cpi-release'
 $concourse_uri = 'http://13.94.41.160:8080'
 
 # email notification list
-$email_to_list = ['t-chhe@microsoft.com']
+$email_to_list = ['t-chhe@microsoft.com', 'binxi@microsoft.com', 'Chou.Hu@microsoft.com']
 $email_from = 'bot@bosh.azure.cpi.com'
 
 
@@ -240,7 +240,7 @@ def add_pipeline_lock(pipeline)
     'source' => {
       'uri' => '$pipeline_lock_git_uri$',
       'branch' => '$pipeline_lock_branch$',
-      'pool' => '$pipeline_lock_pool$',
+      'pool' => 'pipeline',
       'private_key' => '$pipeline_lock_private_key$'
     }
   }
