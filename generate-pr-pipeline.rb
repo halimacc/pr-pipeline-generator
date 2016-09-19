@@ -2,33 +2,31 @@ require 'yaml'
 
 # Params of new resources
 
-# input pipeline file path &
-pipeline_file = 'pipeline.yml.example'
+# input pipeline file path
+pipeline_file = 'pipeline.yml'
 
 # output pipeline file path
-pr_pipeline_file = 'pr-pipeline.yml.example'
+pr_pipeline_file = 'pr-pipeline.yml'
 
 # resource name of bosh-azure-cpi-release to replace
-$input_resource_name = 'bosh-cpi-release-in'
+$input_resource_name = 'bosh-cpi-src-in'
 
-# resource name of pull request of bosh-azure-cpi-release
-$pr_resource_name = 'bosh-cpi-pr'
+# path name of the input resource in get
+$input_resource_path = 'bosh-cpi-src'
 
 # the repository of your bosh-azure-cpi-release
 $pr_repo = 'halimacc/bosh-azure-cpi-release'
 
-# concourse uri
-$concourse_uri = 'http://13.94.41.160:8080'
+# concourse uri, used for email notification
+$concourse_uri = 'http://localhost:8080'
 
 # email notification list
-$email_to_list = ['t-chhe@microsoft.com', 'binxi@microsoft.com', 'Chou.Hu@microsoft.com']
+$email_to_list = ['test@bosh.azure.cpi.com']
 $email_from = 'bot@bosh.azure.cpi.com'
-
-
 
 #==========================================================
 
-$input_resource_path = 'bosh-cpi-release'
+$pr_resource_name = 'bosh-cpi-pr'
 $entry_job_name = 'build-candidate'
 $test_job_names = ['bats-ubuntu', 'lifecycle']
 $cleanup_job_name = 'cleanup_on_success'
@@ -92,7 +90,7 @@ def replace_input_resource(pipeline)
       'repo' => $pr_repo,
       'access_token' => '$github_access_token$',
       'private_key' => '$github_deployment_key__bosh-azure-cpi-release$',
-      'every' => true
+      #'every' => true
     }
   }
   
@@ -219,7 +217,8 @@ def add_notification_resource_and_steps(pipeline)
   cleanup_job = {
     'name' => $cleanup_job_name,
     'plan' => [{
-        'get' => $pr_resource_name,
+        'get' => $input_resource_path,
+        'resource' => $pr_resource_name,
         'trigger' => true,
         'passed' => $test_job_names
       },
